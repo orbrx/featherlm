@@ -4,18 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "featherlm"
-version = "0.0.0"
+version = "0.0.1"
 description = "A tiny universal local-inference layer: load any HF causal LM with the fastest config for your GPU, then generate/stream, with per-family reasoning parsing."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 keywords = ["llm", "inference", "transformers", "marimo", "molab", "gpu"]
-# torch is intentionally NOT a dependency: featherlm targets environments where a
-# GPU-matched torch is already present (e.g. molab's cu130 build). Installing featherlm
-# never touches torch — it only brings the rest. (Motto: "...where only torch is available".)
+# torch is intentionally NOT a direct dependency: featherlm targets environments where a
+# GPU-matched torch is already present (e.g. molab's cu130 build). (`accelerate` does require
+# torch, so a fully isolated env will still pull a torch build — see README.)
+# The rest are the "batteries": transformers + the tokenizer backends needed across model
+# families (sentencepiece for Llama/Gemma/Mistral SPM, tiktoken for Qwen/gpt-oss).
 dependencies = [
     "transformers>=5.0",
     "accelerate",
+    "sentencepiece",
+    "tiktoken",
+    "protobuf",
 ]
 
 [project.optional-dependencies]
