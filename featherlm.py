@@ -48,6 +48,11 @@ DEFAULT_PAD = 512     # left-pad prompts to this so the static-cache graph compi
 BUDGET_PLAIN = 1024   # max_new_tokens, thinking off
 BUDGET_THINK = 4096   # max_new_tokens, thinking on
 
+# On molab, default the HF cache to its working location — reuses molab's pre-seeded models
+# and avoids the ~/.cache symlink-download errors. Only acts if no cache is already chosen.
+if not os.environ.get("HF_HOME") and not os.environ.get("HF_HUB_CACHE") and os.path.isdir("/home/marimo"):
+    os.environ["HF_HOME"] = "/home/marimo/hfcache"
+
 
 def family(model_id: str) -> str:
     """Model family from its id: qwen | gemma | gpt-oss | other."""
@@ -203,16 +208,16 @@ class LLM:
         if kind is None:
             kind = "mxfp4" if "gpt-oss" in model_id.lower() else "bf16"
         self.kind = kind
-        cache_dir = cache_dir or os.path.join(os.environ.get("HF_HOME", "~/.cache/huggingface"), "hub")
+        ckw = {"cache_dir": cache_dir} if cache_dir else {}  # else respect HF_HOME / HF_HUB_CACHE
 
         if kind == "gptq_offload":
             self.model, self.tok, self.cap = self._load_gptq_offload(model_id)
             return
 
-        self.tok = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+        self.tok = AutoTokenizer.from_pretrained(model_id, **ckw)
         if self.tok.pad_token_id is None:
             self.tok.pad_token = self.tok.eos_token
-        kw = dict(device_map=device, cache_dir=cache_dir)
+        kw = dict(device_map=device, **ckw)
         if kind == "mxfp4":
             kw["dtype"] = "auto"            # native MXFP4 (needs `kernels`)
         elif self.fam == "gemma":
