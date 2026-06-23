@@ -41,7 +41,7 @@ from transformers import (AutoModelForCausalLM, AutoTokenizer, TextIteratorStrea
                            set_seed)
 
 __all__ = ["LLM", "load", "family", "split_reasoning", "DEFAULT_PAD",
-           "BUDGET_PLAIN", "BUDGET_THINK",
+           "BUDGET_PLAIN", "BUDGET_THINK", "MODELS",
            "python_tool", "run_python", "parse_tool_calls", "extract_code", "TOOLS"]
 
 DEFAULT_PAD = 512     # left-pad prompts to this so the static-cache graph compiles once
@@ -52,6 +52,29 @@ BUDGET_THINK = 4096   # max_new_tokens, thinking on
 # and avoids the ~/.cache symlink-download errors. Only acts if no cache is already chosen.
 if not os.environ.get("HF_HOME") and not os.environ.get("HF_HUB_CACHE") and os.path.isdir("/home/marimo"):
     os.environ["HF_HOME"] = "/home/marimo/hfcache"
+
+
+# Curated model menu — the single source of truth for "what can I load?". Consumers
+# (e.g. the marimo demos) read featherlm.MODELS to build a dropdown, so adding a model
+# here makes it appear everywhere. load() also takes ANY raw HF id directly.
+# Each entry: label -> {id: HF repo, kind: bf16 | mxfp4 (gpt-oss) | gptq_offload (huge, slow)}.
+MODELS = {
+    "Qwen3-4B-Instruct · dense 4B · bf16":        {"id": "Qwen/Qwen3-4B-Instruct-2507", "kind": "bf16"},
+    "Qwen3-8B · dense 8B · bf16":                 {"id": "Qwen/Qwen3-8B", "kind": "bf16"},
+    "Qwen3-14B · dense 14B · bf16":               {"id": "Qwen/Qwen3-14B", "kind": "bf16"},
+    "Phi-4 · dense 14B · bf16":                   {"id": "microsoft/phi-4", "kind": "bf16"},
+    "Qwen3-32B · dense 32B · bf16":               {"id": "Qwen/Qwen3-32B", "kind": "bf16"},
+    "★ Qwen3-30B-A3B · MoE 30B/3B active · bf16": {"id": "Qwen/Qwen3-30B-A3B-Instruct-2507", "kind": "bf16"},
+    "Gemma-4-31B-it (Google) · dense 31B · bf16": {"id": "google/gemma-4-31B-it", "kind": "bf16"},
+    "gpt-oss-20B · MoE 20B/3.6B active · MXFP4":  {"id": "openai/gpt-oss-20b", "kind": "mxfp4"},
+    "gpt-oss-120B · MoE 117B/5.1B active · MXFP4":{"id": "openai/gpt-oss-120b", "kind": "mxfp4"},
+    "⚠️ Qwen3-235B-A22B · GPTQ-Int4 · GPU+CPU offload (~0.1 tok/s, ~10 min)":
+        {"id": "Qwen/Qwen3-235B-A22B-GPTQ-Int4", "kind": "gptq_offload"},
+}
+
+# id -> kind, so load(<a registry id>) picks the right kind (e.g. the 235B -> gptq_offload)
+# even when kind isn't passed. Non-registry ids still fall back to auto-detection.
+_ID_TO_KIND = {spec["id"]: spec["kind"] for spec in MODELS.values()}
 
 
 def family(model_id: str) -> str:
@@ -206,7 +229,7 @@ class LLM:
         self.pad = pad
         self.cap = None  # per-model max_new_tokens cap (set for slow offload models)
         if kind is None:
-            kind = "mxfp4" if "gpt-oss" in model_id.lower() else "bf16"
+            kind = _ID_TO_KIND.get(model_id) or ("mxfp4" if "gpt-oss" in model_id.lower() else "bf16")
         self.kind = kind
         ckw = {"cache_dir": cache_dir} if cache_dir else {}  # else respect HF_HOME / HF_HUB_CACHE
 

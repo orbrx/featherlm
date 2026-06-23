@@ -23,20 +23,8 @@ with app.setup:
     import torch
     from transformers import PreTrainedModel
 
-    # Curated dropdown. featherlm.load() also takes ANY raw HF id.
-    MODELS = {
-        "Qwen3-4B-Instruct  · dense 4B · bf16":      dict(id="Qwen/Qwen3-4B-Instruct-2507", kind="bf16"),
-        "Qwen3-8B           · dense 8B · bf16":      dict(id="Qwen/Qwen3-8B",               kind="bf16"),
-        "Qwen3-14B          · dense 14B · bf16":     dict(id="Qwen/Qwen3-14B",              kind="bf16"),
-        "Phi-4              · dense 14B · bf16":     dict(id="microsoft/phi-4",             kind="bf16"),
-        "Qwen3-32B          · dense 32B · bf16":     dict(id="Qwen/Qwen3-32B",              kind="bf16"),
-        "★ Qwen3-30B-A3B  · MoE 30B/3B act · bf16":  dict(id="Qwen/Qwen3-30B-A3B-Instruct-2507", kind="bf16"),
-        "gpt-oss-20B    · MoE 20B/3.6B act · MXFP4": dict(id="openai/gpt-oss-20b",  kind="mxfp4"),
-        "gpt-oss-120B   · MoE 117B/5.1B act · MXFP4":dict(id="openai/gpt-oss-120b", kind="mxfp4"),
-        "Gemma-3-27B-it (gated*) · dense 27B · bf16":dict(id="google/gemma-3-27b-it", kind="bf16"),
-        "⚠️ Qwen3-235B-A22B · GPTQ-Int4 · GPU+CPU offload (~0.1 tok/s, ~10min)":
-            dict(id="Qwen/Qwen3-235B-A22B-GPTQ-Int4", kind="gptq_offload"),
-    }
+    # Single source of truth — the model menu lives in the library (featherlm.MODELS).
+    MODELS = featherlm.MODELS
 
 
 @app.cell

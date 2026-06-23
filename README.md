@@ -70,10 +70,11 @@ value, kills runaways, and never raises. Extend the registry with `featherlm.TOO
 | Qwen3-4B / 8B / 14B / 32B, Phi-4 | bf16 + static KV cache | 112 / 74 / 44 / 20 |
 | ★ Qwen3-30B-A3B (MoE, 3B active) | bf16 + static KV cache | **85** |
 | gpt-oss-20B / 120B (MoE) | MXFP4 (native `kernels`) | 24 / ~14 |
-| Gemma-3-27B\* | bf16 + static (eager attn) | ~24 |
+| Gemma-4-31B-it | bf16 + static (eager attn) | ~20 *(est.)* |
 | Qwen3-235B-A22B | GPTQ-Int4 + GPU/CPU offload | ~0.1 |
 
-\* gated (needs an HF token). Any other model works by HF id.
+The menu above is `featherlm.MODELS` (label → `{id, kind}`) — query it to build a picker.
+`load()` also takes any raw HF id, and resolves a registry id's `kind` automatically.
 
 The fast path is **bf16 + a static KV cache**: prompts are left-padded to a fixed shape and
 warmed up once, so the cache graph compiles a single time and never recompiles (1.1–2.7× over

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "featherlm"
-version = "0.0.2"
+version = "0.0.3"
 description = "A tiny universal local-inference layer: load any HF causal LM with the fastest config for your GPU, then generate/stream, with per-family reasoning parsing."
 readme = "README.md"
 requires-python = ">=3.10"
