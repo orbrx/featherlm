@@ -120,6 +120,21 @@ def _keep_special(tok):
     return "<|channel>" in (getattr(tok, "chat_template", "") or "")
 
 
+def _gemma_attn(model_id, ckw):
+    """Pick the attention impl for a Gemma model: 'eager' for soft-capped Gemma (Gemma 2,
+    where SDPA would be numerically wrong), else 'sdpa' (Gemma 3/4 — verified equal decode
+    speed, faster prefill). Defaults to 'eager' if the config can't be read."""
+    try:
+        from transformers import AutoConfig
+        cfg = AutoConfig.from_pretrained(model_id, **ckw)
+        for cc in (cfg, getattr(cfg, "text_config", None)):
+            if cc is not None and getattr(cc, "attn_logit_softcapping", None):
+                return "eager"
+        return "sdpa"
+    except Exception:
+        return "eager"
+
+
 # --------------------------------------------------------------------------
 # Native tool-calling helpers — build a ReAct loop on top (the loop is yours).
 # --------------------------------------------------------------------------
@@ -258,7 +273,11 @@ class LLM:
         if kind == "mxfp4":
             kw["dtype"] = "auto"            # native MXFP4 (needs `kernels`)
         elif self.fam == "gemma":
-            kw.update(dtype=torch.bfloat16, attn_implementation="eager")
+            # Gemma 2 uses attention soft-capping, which SDPA can't apply -> needs eager for
+            # correctness. Gemma 3/4 dropped it -> SDPA is correct (verified), same decode
+            # speed, and faster prefill. Pick per-model from the config (default eager if
+            # we can't read it).
+            kw.update(dtype=torch.bfloat16, attn_implementation=_gemma_attn(model_id, ckw))
         else:
             kw.update(dtype=torch.bfloat16, attn_implementation="sdpa")
         self.model = AutoModelForCausalLM.from_pretrained(model_id, **kw).eval()

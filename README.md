@@ -70,18 +70,19 @@ value, kills runaways, and never raises. Extend the registry with `featherlm.TOO
 | Qwen3-4B / 8B / 14B / 32B, Phi-4 | bf16 + static KV cache | 112 / 74 / 44 / 20 |
 | ★ Qwen3-30B-A3B (MoE, 3B active) | bf16 + static KV cache | **85** |
 | gpt-oss-20B / 120B (MoE) | MXFP4 (native `kernels`) | 24 / ~14 |
-| Gemma-4-31B-it / Gemma-3-27B-it\* | bf16 + static (eager attn) | ~20 *(est.)* |
+| Gemma-4-31B-it / Gemma-3-27B-it\* | bf16 + static (SDPA) | 20 / 23 |
 | Qwen3-235B-A22B | GPTQ-Int4 + GPU/CPU offload | ~0.1 |
 
 \* gated — needs an HF token / accepted license. The menu above is `featherlm.MODELS`
 (label → `{id, kind}`) — query it to build a picker. `load()` also takes any raw HF id, and
 resolves a registry id's `kind` automatically.
 
-**Gemma 3 vs Gemma 4** are both handled. featherlm uses eager attention for any Gemma (their
-soft-capping/kernel paths need it) and decides reasoning/tool parsing from the chat template:
-**Gemma 4**'s `<|channel>thought … <channel|>` channels + `<|tool_call>` dialect are parsed
-natively (special tokens kept); **Gemma 3** (no channels) decodes clean, and its tool use is
-read from `` ```tool_code `` blocks via `extract_code`.
+**Gemma 2 / 3 / 4** are all handled. featherlm picks attention per-model from the config:
+**eager** for soft-capped Gemma 2 (SDPA can't apply soft-capping), **SDPA** for Gemma 3/4
+(no soft-capping — measured equal decode speed *and* faster prefill, output verified). It
+also adapts to each chat template: **Gemma 4**'s `<|channel>thought … <channel|>` channels +
+`<|tool_call>` dialect are parsed natively (special tokens kept); **Gemma 3** (no channels)
+decodes clean, and its tool use is read from `` ```tool_code `` blocks via `extract_code`.
 
 The fast path is **bf16 + a static KV cache**: prompts are left-padded to a fixed shape and
 warmed up once, so the cache graph compiles a single time and never recompiles (1.1–2.7× over
