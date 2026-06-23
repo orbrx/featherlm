@@ -66,6 +66,7 @@ MODELS = {
     "Qwen3-32B · dense 32B · bf16":               {"id": "Qwen/Qwen3-32B", "kind": "bf16"},
     "★ Qwen3-30B-A3B · MoE 30B/3B active · bf16": {"id": "Qwen/Qwen3-30B-A3B-Instruct-2507", "kind": "bf16"},
     "Gemma-4-31B-it (Google) · dense 31B · bf16": {"id": "google/gemma-4-31B-it", "kind": "bf16"},
+    "Gemma-3-27B-it (gated*) · dense 27B · bf16":  {"id": "google/gemma-3-27b-it", "kind": "bf16"},
     "gpt-oss-20B · MoE 20B/3.6B active · MXFP4":  {"id": "openai/gpt-oss-20b", "kind": "mxfp4"},
     "gpt-oss-120B · MoE 117B/5.1B active · MXFP4":{"id": "openai/gpt-oss-120b", "kind": "mxfp4"},
     "⚠️ Qwen3-235B-A22B · GPTQ-Int4 · GPU+CPU offload (~0.1 tok/s, ~10 min)":
@@ -109,6 +110,14 @@ def split_reasoning(text: str, fam: str):
               "<end_of_turn>", "<|return|>", "<|end|>"):
         a = a.replace(t, "")
     return r.strip(), a.strip()
+
+
+def _keep_special(tok):
+    """Whether to KEEP special tokens when decoding. True only for channel-style chat
+    templates (e.g. Gemma 4's `<|channel>thought ... <channel|>`), whose reasoning/tool
+    markers ARE special tokens and must survive decode. Classic templates (Gemma 3, Qwen,
+    Llama, ...) decode clean with specials stripped."""
+    return "<|channel>" in (getattr(tok, "chat_template", "") or "")
 
 
 # --------------------------------------------------------------------------
@@ -159,10 +168,11 @@ TOOLS = {"run_python": run_python}
 
 def parse_tool_calls(text, fam="qwen"):
     """Parse native tool calls into [{name, arguments}].
+      gemma 4: <|tool_call>call:NAME{arg:<|"|>value<|"|>}<tool_call|>  (channel dialect)
       hermes (Qwen & most): <tool_call>{json}</tool_call>
-      gemma:                <|tool_call>call:NAME{arg:<|"|>value<|"|>}<tool_call|>
-    For gemma the delimiters are special tokens — keep them (featherlm streams gemma with
-    skip_special_tokens=False, so they survive)."""
+    Gemma 4's delimiters are special tokens — featherlm keeps them for channel-style
+    templates so they survive. Gemma 3 (no channel dialect) falls through to the hermes
+    form; if that's empty too, use extract_code() for its ```python/```tool_code blocks."""
     import json as _json
     import re as _re
     calls = []
@@ -170,7 +180,8 @@ def parse_tool_calls(text, fam="qwen"):
         for m in _re.finditer(r"<\|tool_call>call:(\w+)\{(.*?)\}<tool_call\|>", text, _re.S):
             args = dict(_re.findall(r'(\w+):<\|"\|>(.*?)<\|"\|>', m.group(2), _re.S))
             calls.append({"name": m.group(1), "arguments": args})
-        return calls
+        if calls:                        # Gemma 4 matched; Gemma 3 falls through to hermes
+            return calls
     for raw in _re.findall(r"<tool_call>\s*(.*?)\s*</tool_call>", text, _re.S):
         try:
             calls.append(_json.loads(raw))
@@ -180,9 +191,10 @@ def parse_tool_calls(text, fam="qwen"):
 
 
 def extract_code(text):
-    """Fallback when a model doesn't emit <tool_call>: the last ```python/```json block."""
+    """Fallback when a model doesn't emit <tool_call>: the last fenced code block. Strips any
+    language tag (```python, ```json, Gemma 3's ```tool_code, ...)."""
     import re as _re
-    for b in reversed(_re.findall(r"```(?:python|json)?\s*\n?(.*?)```", text, _re.S)):
+    for b in reversed(_re.findall(r"```[a-zA-Z_]*[ \t]*\n?(.*?)```", text, _re.S)):
         b = b.strip()
         if b and not b.startswith("["):
             return b
@@ -235,9 +247,11 @@ class LLM:
 
         if kind == "gptq_offload":
             self.model, self.tok, self.cap = self._load_gptq_offload(model_id)
+            self.keep_special = _keep_special(self.tok)
             return
 
         self.tok = AutoTokenizer.from_pretrained(model_id, **ckw)
+        self.keep_special = _keep_special(self.tok)
         if self.tok.pad_token_id is None:
             self.tok.pad_token = self.tok.eos_token
         kw = dict(device_map=device, **ckw)
@@ -284,7 +298,7 @@ class LLM:
         set_seed(int(seed))
         with torch.no_grad():
             out = self.model.generate(**enc, **_gen_config(self.fam, thinking, budget, self.tok.eos_token_id))
-        raw = self.tok.decode(out[0, start:], skip_special_tokens=(self.fam != "gemma"))
+        raw = self.tok.decode(out[0, start:], skip_special_tokens=(not self.keep_special))
         return split_reasoning(raw, self.fam)
 
     def stream(self, prompt, thinking=False, seed=3407, max_tokens=None):
@@ -292,7 +306,7 @@ class LLM:
         enc, _, budget, _ = self._prepare(prompt, thinking, max_tokens)
         set_seed(int(seed))
         streamer = TextIteratorStreamer(self.tok, skip_prompt=True,
-                                        skip_special_tokens=(self.fam != "gemma"))
+                                        skip_special_tokens=(not self.keep_special))
         cfg = _gen_config(self.fam, thinking, budget, self.tok.eos_token_id)
         threading.Thread(target=self.model.generate, daemon=True,
                          kwargs=dict(**enc, streamer=streamer, **cfg)).start()
@@ -329,7 +343,7 @@ class LLM:
         if stream:
             def _events():
                 streamer = TextIteratorStreamer(self.tok, skip_prompt=True,
-                                                skip_special_tokens=(self.fam != "gemma"))
+                                                skip_special_tokens=(not self.keep_special))
                 threading.Thread(target=self.model.generate, daemon=True,
                                  kwargs=dict(**enc, streamer=streamer, **cfg)).start()
                 raw = ""
@@ -341,7 +355,7 @@ class LLM:
         start = enc["input_ids"].shape[1]
         with torch.no_grad():
             out = self.model.generate(**enc, **cfg)
-        raw = self.tok.decode(out[0, start:], skip_special_tokens=(self.fam != "gemma"))
+        raw = self.tok.decode(out[0, start:], skip_special_tokens=(not self.keep_special))
         return split_reasoning(raw, self.fam)
 
 
