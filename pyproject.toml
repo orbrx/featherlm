@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "featherlm"
+version = "0.0.0"
+description = "A tiny universal local-inference layer: load any HF causal LM with the fastest config for your GPU, then generate/stream, with per-family reasoning parsing."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["llm", "inference", "transformers", "marimo", "molab", "gpu"]
+# torch is intentionally NOT a dependency: featherlm targets environments where a
+# GPU-matched torch is already present (e.g. molab's cu130 build). Installing featherlm
+# never touches torch — it only brings the rest. (Motto: "...where only torch is available".)
+dependencies = [
+    "transformers>=5.0",
+    "accelerate",
+]
+
+[project.optional-dependencies]
+mxfp4 = ["kernels>=0.12,<0.13"]   # gpt-oss MXFP4
+offload = ["gptqmodel"]           # GPTQ-Int4 + GPU/CPU offload for >120B
+all = ["kernels>=0.12,<0.13", "gptqmodel"]
+
+[project.urls]
+Repository = "https://github.com/orbrx/featherlm"
+
+[tool.setuptools]
+py-modules = ["featherlm"]
